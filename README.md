@@ -100,6 +100,34 @@ http://localhost:3000
 docker compose down
 ```
 
+## 自动部署
+
+生产部署使用 1Panel 主机主动拉取 GitHub 的方式，避免依赖外部机器入站访问内网服务。
+
+当前生产约定：
+
+```text
+Host: 192.168.1.83
+App dir: /home/happy/apps/gpt-image-web
+Public port: 15230
+URL: http://110.171.40.190:15230
+Branch: main
+```
+
+服务器每分钟执行一次：
+
+```bash
+/home/happy/apps/gpt-image-web/deploy/pull-deploy.sh
+```
+
+脚本会检查 `main` 的最新 commit，只有发现更新时才会拉取代码并执行：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build --remove-orphans
+```
+
+部署前请在服务器的 `/home/happy/apps/gpt-image-web/.env` 配置真实密钥和访问口令；该文件不会提交到 GitHub。
+
 ## 注意
 
 - 图片接口会按供应商账户规则计费。

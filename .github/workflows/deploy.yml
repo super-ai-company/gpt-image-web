@@ -1,0 +1,37 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+  deploy-note:
+    name: Pull Deploy Note
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain deployment trigger
+        run: |
+          echo "Production deployment is performed by the 1Panel host pull-deploy cron."
+          echo "The host checks main every minute and deploys this commit when it sees the update."
+          echo "Commit: $GITHUB_SHA"
