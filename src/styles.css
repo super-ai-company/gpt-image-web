@@ -425,6 +425,42 @@ button {
   font-size: 12px;
 }
 
+.progress-card {
+  margin-top: 16px;
+  padding: 14px;
+  background: #f8fbff;
+  border: 1px solid #dfe8f4;
+  border-radius: 16px;
+}
+
+.progress-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #5b718d;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.progress-line strong {
+  color: #0f172a;
+}
+
+.progress-track {
+  height: 8px;
+  margin-top: 10px;
+  overflow: hidden;
+  background: #e4edf8;
+  border-radius: 999px;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), #38bdf8);
+  border-radius: inherit;
+  transition: width 500ms ease;
+}
+
 .preview-box {
   position: relative;
   min-height: 300px;

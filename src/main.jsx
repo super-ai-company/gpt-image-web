@@ -26,6 +26,16 @@ const defaultConfig = {
   formats: ['png', 'jpeg', 'webp']
 };
 
+function getProgressLabel(value, mode) {
+  const action = mode === 'generate' ? '生成' : '编辑';
+  if (value >= 100) return `${action}完成`;
+  if (value >= 86) return '等待模型返回结果';
+  if (value >= 68) return '正在渲染图像细节';
+  if (value >= 42) return '模型正在处理提示词';
+  if (value >= 18) return '已提交到模型接口';
+  return '准备请求';
+}
+
 function App() {
   const [auth, setAuth] = useState({ checked: false, authRequired: false, authenticated: false });
   const [loginPassword, setLoginPassword] = useState('');
@@ -44,6 +54,7 @@ function App() {
   const [image, setImage] = useState(null);
   const [mask, setMask] = useState(null);
   const [status, setStatus] = useState('idle');
+  const [progress, setProgress] = useState({ value: 0, label: '等待开始' });
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
@@ -90,6 +101,20 @@ function App() {
 
   const canSubmit = prompt.trim().length > 0 && status !== 'loading' && (mode === 'generate' || image);
 
+  useEffect(() => {
+    if (status !== 'loading') return undefined;
+
+    const timer = window.setInterval(() => {
+      setProgress((current) => {
+        const increment = current.value < 35 ? 7 : current.value < 70 ? 4 : 1;
+        const value = Math.min(current.value + increment, 92);
+        return { value, label: getProgressLabel(value, mode) };
+      });
+    }, 700);
+
+    return () => window.clearInterval(timer);
+  }, [status, mode]);
+
   async function login(event) {
     event.preventDefault();
     if (!loginPassword.trim() || loginStatus === 'loading') return;
@@ -125,6 +150,7 @@ function App() {
   async function submit() {
     if (!canSubmit) return;
     setStatus('loading');
+    setProgress({ value: 6, label: getProgressLabel(6, mode) });
     setError('');
     setResult(null);
 
@@ -173,10 +199,12 @@ function App() {
       if (!response.ok) {
         throw new Error(data.error || '请求失败');
       }
+      setProgress({ value: 100, label: getProgressLabel(100, mode) });
       setResult(data);
       setStatus('success');
     } catch (requestError) {
       setError(requestError.message || '请求失败');
+      setProgress({ value: 0, label: '请求失败' });
       setStatus('error');
     }
   }
@@ -187,6 +215,7 @@ function App() {
     setMask(null);
     setError('');
     setResult(null);
+    setProgress({ value: 0, label: '等待开始' });
     setStatus('idle');
   }
 
@@ -342,6 +371,7 @@ function App() {
           mode={mode}
           status={status}
           error={error}
+          progress={progress}
           result={result}
           meta={{
             provider: selectedProvider?.name || provider,
@@ -410,7 +440,7 @@ function UploadField({ label, file, onChange, help, required = false }) {
   );
 }
 
-function ResultPanel({ mode, status, error, result, meta }) {
+function ResultPanel({ mode, status, error, progress, result, meta }) {
   const title = status === 'loading'
     ? mode === 'generate' ? '正在生成' : '正在编辑'
     : status === 'success'
@@ -426,6 +456,10 @@ function ResultPanel({ mode, status, error, result, meta }) {
         </div>
         <b>{status === 'loading' ? '处理中' : status === 'success' ? '已完成' : status === 'error' ? '失败' : '待开始'}</b>
       </div>
+
+      {(status === 'loading' || status === 'success') && (
+        <ProgressBar progress={progress} />
+      )}
 
       <div className={`preview-box ${status}`}>
         {status === 'loading' && <div className="loader" />}
@@ -487,6 +521,22 @@ function ResultPanel({ mode, status, error, result, meta }) {
         </div>
       </dl>
     </aside>
+  );
+}
+
+function ProgressBar({ progress }) {
+  const value = Math.max(0, Math.min(100, Math.round(progress.value || 0)));
+
+  return (
+    <div className="progress-card" aria-live="polite">
+      <div className="progress-line">
+        <span>{progress.label}</span>
+        <strong>{value}%</strong>
+      </div>
+      <div className="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={value}>
+        <div className="progress-fill" style={{ width: `${value}%` }} />
+      </div>
+    </div>
   );
 }
 
