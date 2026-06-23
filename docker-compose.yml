@@ -1,0 +1,8 @@
+services:
+  gpt-image-web:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: .env
+        required: false
