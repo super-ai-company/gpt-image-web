@@ -7,6 +7,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import OpenAI from 'openai';
+import sharp from 'sharp';
 import { getPublicConfig, resolveProvider } from './config.js';
 
 const app = express();
@@ -146,11 +147,19 @@ function normalizeImageResponse(response) {
   }));
 }
 
-function dataUrlToFile(file) {
+async function dataUrlToFile(file) {
   if (!file) return null;
-  const name = file.originalname || 'image.png';
-  const type = file.mimetype || 'image/png';
-  return new File([file.buffer], name, { type });
+  let name = file.originalname || 'image.png';
+  let type = file.mimetype || 'image/png';
+  let buffer = file.buffer;
+
+  if (path.extname(name).toLowerCase() === '.mpo') {
+    buffer = await sharp(buffer, { pages: 1 }).jpeg().toBuffer();
+    name = `${path.basename(name, path.extname(name)) || 'image'}.jpg`;
+    type = 'image/jpeg';
+  }
+
+  return new File([buffer], name, { type });
 }
 
 app.get('/api/auth/session', (req, res) => {
@@ -228,8 +237,8 @@ app.post('/api/images/edit', upload.fields([
     const clientApiKey = config.allowClientApiKey ? req.body.apiKey : undefined;
     const client = buildClient(provider, clientApiKey);
     const prompt = requirePrompt(req.body.prompt);
-    const imageFile = dataUrlToFile(req.files?.image?.[0]);
-    const maskFile = dataUrlToFile(req.files?.mask?.[0]);
+    const imageFile = await dataUrlToFile(req.files?.image?.[0]);
+    const maskFile = await dataUrlToFile(req.files?.mask?.[0]);
 
     if (!imageFile) {
       throw new Error('Input image is required');
