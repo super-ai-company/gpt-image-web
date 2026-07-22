@@ -223,6 +223,16 @@ app.post('/api/images/generate', async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('[image.generate.error]', {
+      provider: req.body?.provider || 'default',
+      model: req.body?.model || 'default',
+      status: error?.status,
+      code: error?.code,
+      type: error?.type,
+      requestId: error?.request_id || error?.requestId,
+      message: error?.message,
+      cause: error?.cause?.message
+    });
     res.status(400).json({ error: error.message || 'Image generation failed' });
   }
 });
