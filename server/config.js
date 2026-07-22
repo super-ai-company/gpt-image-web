@@ -4,7 +4,7 @@ const defaultProviders = [
     name: 'OpenAI',
     baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
     apiKeyEnv: 'OPENAI_API_KEY',
-    models: ['gpt-image-2', 'gpt-image-1']
+    models: ['gpt-image-2', 'gpt-image-1', 'gemini-3.1-flash-image']
   }
 ];
 

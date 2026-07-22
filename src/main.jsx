@@ -19,7 +19,7 @@ const defaultConfig = {
   allowClientApiKey: false,
   defaultProvider: 'openai',
   defaultModel: 'gpt-image-2',
-  providers: [{ id: 'openai', name: 'OpenAI', models: ['gpt-image-2'] }],
+  providers: [{ id: 'openai', name: 'OpenAI', models: ['gpt-image-2', 'gemini-3.1-flash-image'] }],
   counts: [1, 2, 3, 4],
   sizes: ['auto', '1024x1024', '1536x1024', '1024x1536'],
   qualities: ['auto', 'low', 'medium', 'high'],
