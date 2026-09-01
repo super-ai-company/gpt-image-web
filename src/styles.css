@@ -225,11 +225,185 @@ button {
 
 .field span,
 .prompt-field span,
+.brief-field span,
 .upload-field > span {
   color: #7b8eaa;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0;
+}
+
+.prompt-studio {
+  margin-top: 18px;
+  padding: 16px;
+  background: #f8faff;
+  border: 1px solid #d8e2f3;
+  border-radius: 20px;
+}
+
+.prompt-studio-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.prompt-studio-header span {
+  color: #7659b8;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.prompt-studio-header h3 {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+
+.prompt-studio-header b {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  color: #6845ae;
+  background: #eee8ff;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.brief-field {
+  display: grid;
+  gap: 6px;
+}
+
+.brief-field textarea {
+  width: 100%;
+  min-height: 88px;
+  padding: 14px 16px;
+  color: #1e293b;
+  resize: vertical;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  outline: none;
+  line-height: 1.65;
+}
+
+.brief-field textarea:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 4px rgba(124, 88, 196, 0.1);
+}
+
+.brief-field small,
+.prompt-field small {
+  justify-self: end;
+  color: #7c90ab;
+}
+
+.style-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  align-items: end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.prompt-action {
+  height: 46px;
+  color: #ffffff;
+  background: #6d4bb3;
+  border-radius: 15px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.prompt-action:hover:not(:disabled) {
+  background: #5b3b9d;
+}
+
+.prompt-action:disabled {
+  background: #c7bddc;
+  cursor: not-allowed;
+}
+
+.style-suggestions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.style-suggestions > span {
+  flex: 0 0 auto;
+  color: #7b8eaa;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.style-suggestions > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.style-suggestions button {
+  padding: 5px 10px;
+  color: #594979;
+  background: #ffffff;
+  border: 1px solid #ddd4ef;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.style-suggestions button.active {
+  color: #ffffff;
+  background: #7659b8;
+  border-color: #7659b8;
+}
+
+.style-recipe {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.65fr) minmax(180px, 1.35fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  color: #403257;
+  background: linear-gradient(120deg, #f0eaff, #f8f4ff 62%, #fff7fb);
+  border: 1px solid #ded2f4;
+  border-radius: 15px;
+}
+
+.style-recipe div {
+  display: grid;
+  gap: 2px;
+}
+
+.style-recipe span,
+.style-recipe small {
+  color: #7a6993;
+  font-size: 11px;
+}
+
+.style-recipe strong {
+  font-size: 14px;
+}
+
+.style-recipe p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.prompt-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  color: var(--danger);
+  background: #fff5f5;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  font-size: 13px;
 }
 
 .field select,
@@ -253,6 +427,10 @@ button {
 
 .prompt-field {
   margin-top: 18px;
+}
+
+.prompt-studio .prompt-field {
+  margin-top: 14px;
 }
 
 .prompt-field textarea {
@@ -558,6 +736,73 @@ button {
   text-decoration: none;
 }
 
+.result-links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.result-links button {
+  padding: 0;
+  color: #6845ae;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.refinement-card {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 14px;
+  background: #f8f5ff;
+  border: 1px solid #e1d8f4;
+  border-radius: 16px;
+}
+
+.refinement-card > span {
+  color: #6845ae;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.refinement-card textarea {
+  min-height: 78px;
+  padding: 11px 12px;
+  resize: vertical;
+  color: #1e293b;
+  background: #ffffff;
+  border: 1px solid #dcd3ed;
+  border-radius: 12px;
+  outline: none;
+  line-height: 1.55;
+}
+
+.refinement-card textarea:focus {
+  border-color: #a78bfa;
+  box-shadow: 0 0 0 3px rgba(124, 88, 196, 0.1);
+}
+
+.refinement-card button {
+  height: 40px;
+  color: #ffffff;
+  background: #7659b8;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.refinement-card button:disabled {
+  background: #c7bddc;
+  cursor: not-allowed;
+}
+
+.refinement-card small {
+  color: #7b6d91;
+  line-height: 1.5;
+}
+
 .error-box {
   margin-top: 14px;
   padding: 12px 14px;
@@ -614,8 +859,15 @@ button {
   }
 
   .field-grid,
-  .upload-grid {
+  .upload-grid,
+  .style-controls,
+  .style-recipe {
     grid-template-columns: 1fr;
+  }
+
+  .style-suggestions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .actions {

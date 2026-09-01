@@ -38,6 +38,7 @@ export function getPublicConfig() {
     allowClientApiKey: process.env.ALLOW_CLIENT_API_KEY === 'true',
     defaultProvider: process.env.DEFAULT_PROVIDER || providers[0]?.id || 'openai',
     defaultModel: process.env.DEFAULT_MODEL || providers[0]?.models?.[0] || 'gpt-image-2',
+    promptModel: process.env.PROMPT_MODEL || 'gpt-5-mini',
     providers: providers.map(({ id, name, models }) => ({ id, name, models })),
     counts: [1, 2, 3, 4],
     sizes: ['auto', '1024x1024', '1536x1024', '1024x1536', '2560x1440'],

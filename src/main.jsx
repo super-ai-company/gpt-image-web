@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import {
+  findStyleTemplate,
+  recommendStyleTemplates,
+  styleTemplates
+} from '../shared/styleLibrary.js';
 
 const promptPresets = [
   '电商主图',
@@ -66,7 +71,12 @@ function App() {
   const [quality, setQuality] = useState('auto');
   const [format, setFormat] = useState('png');
   const [apiKey, setApiKey] = useState('');
+  const [brief, setBrief] = useState('');
+  const [styleTemplateId, setStyleTemplateId] = useState('auto');
+  const [promptStatus, setPromptStatus] = useState('idle');
+  const [promptError, setPromptError] = useState('');
   const [prompt, setPrompt] = useState('');
+  const [adjustment, setAdjustment] = useState('');
   const [image, setImage] = useState(null);
   const [mask, setMask] = useState(null);
   const [status, setStatus] = useState('idle');
@@ -108,6 +118,16 @@ function App() {
   const selectedProvider = useMemo(() => {
     return config.providers.find((item) => item.id === provider) || config.providers[0];
   }, [config.providers, provider]);
+
+  const recommendedTemplates = useMemo(() => {
+    return recommendStyleTemplates(brief);
+  }, [brief]);
+
+  const selectedStyleTemplate = useMemo(() => {
+    return styleTemplateId === 'auto'
+      ? recommendedTemplates[0]
+      : findStyleTemplate(styleTemplateId);
+  }, [styleTemplateId, recommendedTemplates]);
 
   useEffect(() => {
     if (!selectedProvider?.models?.includes(model)) {
@@ -183,8 +203,50 @@ function App() {
     }
   }
 
-  async function submit() {
-    if (!canSubmit) return;
+  async function requestOptimizedPrompt(currentPrompt = '', adjustmentText = '') {
+    const response = await fetch('/api/prompts/optimize', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider,
+        apiKey: config.allowClientApiKey ? apiKey : undefined,
+        brief: brief.trim() || currentPrompt,
+        currentPrompt,
+        adjustment: adjustmentText,
+        templateId: selectedStyleTemplate.id,
+        mode,
+        size,
+        format
+      })
+    });
+    const data = await readApiResponse(response);
+    if (response.status === 401) {
+      setAuth((current) => ({ ...current, authenticated: false }));
+    }
+    if (!response.ok) {
+      throw new Error(data.error || '提示词生成失败');
+    }
+    return data.prompt;
+  }
+
+  async function createPrompt() {
+    if (!brief.trim()) return;
+    setPromptStatus('loading');
+    setPromptError('');
+    try {
+      setPrompt(await requestOptimizedPrompt());
+      setPromptStatus('success');
+    } catch (requestError) {
+      setPromptError(requestError.message || '提示词生成失败');
+      setPromptStatus('error');
+    }
+  }
+
+  async function submit(promptOverride = '') {
+    const effectivePrompt = typeof promptOverride === 'string' && promptOverride.trim()
+      ? promptOverride.trim()
+      : prompt.trim();
+    if (!effectivePrompt || status === 'loading' || (mode === 'edit' && !image)) return;
     setStatus('loading');
     setProgress({ value: 6, label: getProgressLabel(6, mode) });
     setError('');
@@ -198,7 +260,7 @@ function App() {
         size,
         quality,
         format,
-        prompt: prompt.trim()
+        prompt: effectivePrompt
       };
 
       let response;
@@ -249,8 +311,55 @@ function App() {
     }
   }
 
+  async function applyAdjustmentAndGenerate() {
+    if (!adjustment.trim() || status === 'loading') return;
+    setPromptStatus('loading');
+    setPromptError('');
+    setError('');
+    try {
+      const nextPrompt = await requestOptimizedPrompt(prompt.trim(), adjustment.trim());
+      setPrompt(nextPrompt);
+      setAdjustment('');
+      setPromptStatus('success');
+      submit(nextPrompt);
+    } catch (requestError) {
+      setError(requestError.message || '调整提示词失败');
+      setPromptStatus('error');
+    }
+  }
+
+  function useResultAsInput(resultImage, index, resultFormat) {
+    if (!resultImage.b64) {
+      setError('当前结果是远程链接，请先下载图片，再切换到图生图上传。');
+      return;
+    }
+
+    const binary = window.atob(resultImage.b64);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const mimeType = resultFormat === 'jpeg' ? 'image/jpeg' : `image/${resultFormat}`;
+    const inputFile = new File([bytes], `generated-${index + 1}.${resultFormat}`, { type: mimeType });
+    const nextPrompt = adjustment.trim()
+      ? `${prompt.trim()}\n\n【本轮调整】${adjustment.trim()}。保持未提及的主体、版式和风格不变。`
+      : prompt;
+
+    setMode('edit');
+    setImage(inputFile);
+    setMask(null);
+    setPrompt(nextPrompt);
+    setAdjustment('');
+    setResult(null);
+    setError('');
+    setProgress({ value: 0, label: '等待开始' });
+    setStatus('idle');
+  }
+
   function resetForm() {
+    setBrief('');
+    setStyleTemplateId('auto');
+    setPromptStatus('idle');
+    setPromptError('');
     setPrompt('');
+    setAdjustment('');
     setImage(null);
     setMask(null);
     setError('');
@@ -351,18 +460,101 @@ function App() {
             )}
           </div>
 
-          <label className="prompt-field">
-            <span>提示词</span>
-            <textarea
-              maxLength={2000}
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder={mode === 'generate'
-                ? '描述你想生成的图像，例如：一张秋季咖啡馆海报，暖色自然光，主标题 Autumn Brew，杂志级排版，真实摄影风格。'
-                : '描述你希望如何修改输入图，例如：保留主体轮廓，将背景替换为透明玻璃展台，增强边缘高光，保持商品居中。'}
-            />
-            <small>{prompt.length}/2000</small>
-          </label>
+          <section className="prompt-studio">
+            <div className="prompt-studio-header">
+              <div>
+                <span>提示词工作台</span>
+                <h3>创意简述 → 风格配方 → 可编辑提示词</h3>
+              </div>
+              <b>Style Library · API</b>
+            </div>
+
+            <label className="brief-field">
+              <span>创意简述</span>
+              <textarea
+                maxLength={600}
+                value={brief}
+                onChange={(event) => setBrief(event.target.value)}
+                placeholder={mode === 'generate'
+                  ? '例如：秋季咖啡馆促销海报，主标题 Autumn Brew，暖色自然光，突出新品拿铁。'
+                  : '例如：保留商品主体，把背景改成透明玻璃展台，增强边缘高光。'}
+              />
+              <small>{brief.length}/600</small>
+            </label>
+
+            <div className="preset-row">
+              {promptPresets.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setBrief((current) => current ? `${current}，${preset}` : preset)}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+
+            <div className="style-controls">
+              <label className="field">
+                <span>风格模板</span>
+                <select value={styleTemplateId} onChange={(event) => setStyleTemplateId(event.target.value)}>
+                  <option value="auto">智能匹配（推荐）</option>
+                  {styleTemplates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.category} · {template.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="prompt-action"
+                type="button"
+                disabled={!brief.trim() || promptStatus === 'loading'}
+                onClick={createPrompt}
+              >
+                {promptStatus === 'loading' ? '正在调用 API...' : '生成专业提示词'}
+              </button>
+            </div>
+
+            <div className="style-suggestions">
+              <span>建议方向</span>
+              <div>
+                {recommendedTemplates.map((template) => (
+                  <button
+                    className={selectedStyleTemplate.id === template.id ? 'active' : ''}
+                    key={template.id}
+                    type="button"
+                    title={template.summary}
+                    onClick={() => setStyleTemplateId(template.id)}
+                  >
+                    {template.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="style-recipe">
+              <div>
+                <span>{selectedStyleTemplate.category}</span>
+                <strong>{selectedStyleTemplate.name}</strong>
+              </div>
+              <p>{selectedStyleTemplate.summary}</p>
+              <small>参考案例：{selectedStyleTemplate.cases}</small>
+            </div>
+
+            {promptError && <div className="prompt-error">{promptError}</div>}
+
+            <label className="prompt-field">
+              <span>可编辑提示词</span>
+              <textarea
+                maxLength={2000}
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="生成专业提示词后，可以在这里继续修改；也可以直接粘贴自己的完整提示词。"
+              />
+              <small>{prompt.length}/2000</small>
+            </label>
+          </section>
 
           {mode === 'edit' && (
             <div className="upload-grid">
@@ -382,20 +574,8 @@ function App() {
             </div>
           )}
 
-          <div className="preset-row">
-            {promptPresets.map((preset) => (
-              <button
-                key={preset}
-                type="button"
-                onClick={() => setPrompt((current) => current ? `${current}，${preset}` : preset)}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-
           <div className="actions">
-            <button className="primary-action" disabled={!canSubmit} onClick={submit}>
+            <button className="primary-action" disabled={!canSubmit} onClick={() => submit()}>
               {status === 'loading' ? '生成中...' : mode === 'generate' ? '+ 生成图片' : '+ 编辑图片'}
             </button>
             <button className="secondary-action" onClick={resetForm}>重置</button>
@@ -413,6 +593,11 @@ function App() {
           error={error}
           progress={progress}
           result={result}
+          adjustment={adjustment}
+          onAdjustmentChange={setAdjustment}
+          onApplyAdjustment={applyAdjustmentAndGenerate}
+          onUseAsInput={useResultAsInput}
+          refinementLoading={promptStatus === 'loading'}
           meta={{
             provider: selectedProvider?.name || provider,
             model,
@@ -480,7 +665,19 @@ function UploadField({ label, file, onChange, help, required = false }) {
   );
 }
 
-function ResultPanel({ mode, status, error, progress, result, meta }) {
+function ResultPanel({
+  mode,
+  status,
+  error,
+  progress,
+  result,
+  adjustment,
+  onAdjustmentChange,
+  onApplyAdjustment,
+  onUseAsInput,
+  refinementLoading,
+  meta
+}) {
   const title = status === 'loading'
     ? mode === 'generate' ? '正在生成' : '正在编辑'
     : status === 'success'
@@ -517,14 +714,17 @@ function ResultPanel({ mode, status, error, progress, result, meta }) {
                 <img src={image.b64 ? `data:image/${result.meta.format};base64,${image.b64}` : image.url} alt={`生成结果 ${index + 1}`} />
                 <figcaption>
                   <span>结果 {index + 1}</span>
-                  <a
-                    href={image.b64 ? `data:image/${result.meta.format};base64,${image.b64}` : image.url}
-                    download={image.b64 ? `gpt-image-${index + 1}.${result.meta.format}` : undefined}
-                    target={image.b64 ? undefined : '_blank'}
-                    rel={image.b64 ? undefined : 'noreferrer'}
-                  >
-                    下载
-                  </a>
+                  <div className="result-links">
+                    <button type="button" onClick={() => onUseAsInput(image, index, result.meta.format)}>继续编辑</button>
+                    <a
+                      href={image.b64 ? `data:image/${result.meta.format};base64,${image.b64}` : image.url}
+                      download={image.b64 ? `gpt-image-${index + 1}.${result.meta.format}` : undefined}
+                      target={image.b64 ? undefined : '_blank'}
+                      rel={image.b64 ? undefined : 'noreferrer'}
+                    >
+                      下载
+                    </a>
+                  </div>
                 </figcaption>
               </figure>
             ))}
@@ -533,6 +733,21 @@ function ResultPanel({ mode, status, error, progress, result, meta }) {
       </div>
 
       {error && <div className="error-box">{error}</div>}
+
+      {status === 'success' && (
+        <div className="refinement-card">
+          <span>继续调整</span>
+          <textarea
+            value={adjustment}
+            onChange={(event) => onAdjustmentChange(event.target.value)}
+            placeholder="例如：标题缩小 15%，背景改成深蓝色，商品和其他版式保持不变。"
+          />
+          <button type="button" disabled={!adjustment.trim() || refinementLoading} onClick={onApplyAdjustment}>
+            {refinementLoading ? '正在优化提示词...' : '优化调整并重新生成'}
+          </button>
+          <small>想保持这张图的主体细节，可先填写调整要求，再点图片下方的“继续编辑”。</small>
+        </div>
+      )}
 
       <dl className="meta-card">
         <div>

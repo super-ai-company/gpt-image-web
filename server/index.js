@@ -9,6 +9,7 @@ import multer from 'multer';
 import OpenAI from 'openai';
 import sharp from 'sharp';
 import { getPublicConfig, resolveProvider } from './config.js';
+import { findStyleTemplate } from '../shared/styleLibrary.js';
 
 const app = express();
 const sessionCookieName = 'gpt_image_access';
@@ -242,6 +243,80 @@ app.use('/api', requireAccess);
 
 app.get('/api/config', (_req, res) => {
   res.json(getPublicConfig());
+});
+
+app.post('/api/prompts/optimize', async (req, res) => {
+  try {
+    const config = getPublicConfig();
+    const provider = resolveProvider(req.body.provider || config.defaultProvider);
+    const clientApiKey = config.allowClientApiKey ? req.body.apiKey : undefined;
+    const client = buildClient(provider, clientApiKey);
+    const brief = requirePrompt(req.body.brief);
+    const currentPrompt = String(req.body.currentPrompt || '').trim();
+    const adjustment = String(req.body.adjustment || '').trim();
+    if (currentPrompt.length > 2000 || adjustment.length > 600) {
+      throw new Error('Prompt adjustment is too long');
+    }
+    const template = findStyleTemplate(req.body.templateId);
+    const mode = req.body.mode === 'edit' ? '图片编辑' : '图片生成';
+    const size = req.body.size === 'auto' ? '自动选择最适合内容的画幅' : req.body.size;
+    const format = String(req.body.format || 'png').toUpperCase();
+
+    const response = await client.chat.completions.create({
+      model: config.promptModel,
+      messages: [
+        {
+          role: 'system',
+          content: [
+            '你是 GPT-Image2 Style Library 提示词设计师。',
+            '把用户的创意简述改写为一份可直接提交给图片模型的中文提示词。',
+            '必须依次包含：【主体与任务】【构图与布局】【视觉风格与材质】【文字与标签】【输出规格】【约束与负面细节】。',
+            '约束必须具体，文字要求、画幅、布局层级和应避免的瑕疵都要明确。',
+            '最终提示词控制在 1800 个中文字符以内。',
+            '只输出最终提示词，不要解释选择过程，不要使用 Markdown 代码块。'
+          ].join('\n')
+        },
+        {
+          role: 'user',
+          content: [
+            `创意简述：${brief}`,
+            `任务模式：${mode}`,
+            `风格模板：${template.name}（${template.id}）`,
+            `模板用途：${template.summary}`,
+            `构图规则：${template.layout}`,
+            `视觉规则：${template.style}`,
+            `文字规则：${template.text}`,
+            `负面约束：${template.negative}`,
+            `参考案例：${template.cases}`,
+            `输出规格：${size}，${format}`,
+            currentPrompt ? `当前完整提示词：\n${currentPrompt}` : '',
+            adjustment ? `本轮调整要求：${adjustment}` : '',
+            currentPrompt && adjustment ? '请根据本轮调整重写完整提示词，未提及部分保持不变。' : '',
+            mode === '图片编辑'
+              ? '编辑要求：保留未被修改要求涉及的主体身份、构图关系和关键细节。'
+              : '成品要求：只生成一张完整成品图，不展示过程稿、分镜、草图或多方案拼贴。'
+          ].join('\n')
+        }
+      ]
+    });
+
+    const optimizedPrompt = response.choices?.[0]?.message?.content?.trim();
+    if (!optimizedPrompt) {
+      throw new Error('Prompt model returned empty content');
+    }
+    if (optimizedPrompt.length > 2000) {
+      throw new Error('Prompt model returned more than 2000 characters');
+    }
+
+    res.json({
+      prompt: optimizedPrompt,
+      template: { id: template.id, name: template.name, cases: template.cases },
+      model: config.promptModel
+    });
+  } catch (error) {
+    logImageError('[prompt.optimize.error]', req.body || {}, error);
+    res.status(error?.status || 400).json({ error: error.message || 'Prompt optimization failed' });
+  }
 });
 
 app.get('/api/images/jobs/:jobId', (req, res) => {
