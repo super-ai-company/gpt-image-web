@@ -14,7 +14,9 @@ const app = express();
 const sessionCookieName = 'gpt_image_access';
 const sessionSecret = process.env.ACCESS_SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 const sessionMaxAgeMs = Number(process.env.ACCESS_SESSION_DAYS || 7) * 24 * 60 * 60 * 1000;
+const imageJobResultTtlMs = Number(process.env.IMAGE_JOB_RESULT_TTL_MINUTES || 15) * 60 * 1000;
 const secureCookie = process.env.ACCESS_COOKIE_SECURE === 'true';
+const imageJobs = new Map();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -147,6 +149,55 @@ function normalizeImageResponse(response) {
   }));
 }
 
+function createImageJob(run) {
+  const id = crypto.randomUUID();
+  const job = {
+    id,
+    status: 'queued',
+    createdAt: new Date().toISOString(),
+    result: null,
+    error: ''
+  };
+  imageJobs.set(id, job);
+
+  setImmediate(async () => {
+    job.status = 'processing';
+    try {
+      job.result = await run();
+      job.status = 'completed';
+    } catch (error) {
+      job.error = error?.message || 'Image request failed';
+      job.status = 'failed';
+    } finally {
+      job.finishedAt = new Date().toISOString();
+      const cleanupTimer = setTimeout(() => imageJobs.delete(id), imageJobResultTtlMs);
+      cleanupTimer.unref?.();
+    }
+  });
+
+  return job;
+}
+
+function imageResult(response, meta) {
+  return {
+    images: normalizeImageResponse(response),
+    meta
+  };
+}
+
+function logImageError(label, request, error) {
+  console.error(label, {
+    provider: request.provider || 'default',
+    model: request.model || 'default',
+    status: error?.status,
+    code: error?.code,
+    type: error?.type,
+    requestId: error?.request_id || error?.requestId,
+    message: error?.message,
+    cause: error?.cause?.message
+  });
+}
+
 async function dataUrlToFile(file) {
   if (!file) return null;
   let name = file.originalname || 'image.png';
@@ -193,46 +244,58 @@ app.get('/api/config', (_req, res) => {
   res.json(getPublicConfig());
 });
 
-app.post('/api/images/generate', async (req, res) => {
+app.get('/api/images/jobs/:jobId', (req, res) => {
+  const job = imageJobs.get(req.params.jobId);
+  if (!job) {
+    res.status(404).json({ error: 'Image job not found or expired' });
+    return;
+  }
+
+  res.json({
+    jobId: job.id,
+    status: job.status,
+    createdAt: job.createdAt,
+    finishedAt: job.finishedAt,
+    result: job.status === 'completed' ? job.result : undefined,
+    error: job.status === 'failed' ? job.error : undefined
+  });
+});
+
+app.post('/api/images/generate', (req, res) => {
   try {
     const config = getPublicConfig();
     const provider = resolveProvider(req.body.provider || config.defaultProvider);
     const clientApiKey = config.allowClientApiKey ? req.body.apiKey : undefined;
     const client = buildClient(provider, clientApiKey);
     const prompt = requirePrompt(req.body.prompt);
-
-    const response = await client.images.generate({
-      model: req.body.model || config.defaultModel,
-      prompt,
-      n: Number(req.body.count || 1),
-      size: req.body.size || 'auto',
-      quality: req.body.quality || 'auto',
-      output_format: req.body.format || 'png'
-    });
-
-    res.json({
-      images: normalizeImageResponse(response),
-      meta: {
-        mode: 'generate',
-        provider: provider.id,
-        model: req.body.model || config.defaultModel,
-        count: Number(req.body.count || 1),
-        size: req.body.size || 'auto',
-        quality: req.body.quality || 'auto',
-        format: req.body.format || 'png'
+    const request = { ...req.body, prompt };
+    const job = createImageJob(async () => {
+      try {
+        const response = await client.images.generate({
+          model: request.model || config.defaultModel,
+          prompt: request.prompt,
+          n: Number(request.count || 1),
+          size: request.size || 'auto',
+          quality: request.quality || 'auto',
+          output_format: request.format || 'png'
+        });
+        return imageResult(response, {
+          mode: 'generate',
+          provider: provider.id,
+          model: request.model || config.defaultModel,
+          count: Number(request.count || 1),
+          size: request.size || 'auto',
+          quality: request.quality || 'auto',
+          format: request.format || 'png'
+        });
+      } catch (error) {
+        logImageError('[image.generate.error]', request, error);
+        throw error;
       }
     });
+    res.status(202).json({ jobId: job.id, status: job.status });
   } catch (error) {
-    console.error('[image.generate.error]', {
-      provider: req.body?.provider || 'default',
-      model: req.body?.model || 'default',
-      status: error?.status,
-      code: error?.code,
-      type: error?.type,
-      requestId: error?.request_id || error?.requestId,
-      message: error?.message,
-      cause: error?.cause?.message
-    });
+    logImageError('[image.generate.error]', req.body || {}, error);
     res.status(400).json({ error: error.message || 'Image generation failed' });
   }
 });
@@ -240,50 +303,55 @@ app.post('/api/images/generate', async (req, res) => {
 app.post('/api/images/edit', upload.fields([
   { name: 'image', maxCount: 1 },
   { name: 'mask', maxCount: 1 }
-]), async (req, res) => {
+]), (req, res) => {
   try {
     const config = getPublicConfig();
     const provider = resolveProvider(req.body.provider || config.defaultProvider);
     const clientApiKey = config.allowClientApiKey ? req.body.apiKey : undefined;
     const client = buildClient(provider, clientApiKey);
     const prompt = requirePrompt(req.body.prompt);
-    const imageFile = await dataUrlToFile(req.files?.image?.[0]);
-    const maskFile = await dataUrlToFile(req.files?.mask?.[0]);
-
-    if (!imageFile) {
+    const inputImage = req.files?.image?.[0];
+    const inputMask = req.files?.mask?.[0];
+    if (!inputImage) {
       throw new Error('Input image is required');
     }
+    const request = { ...req.body, prompt };
+    const job = createImageJob(async () => {
+      try {
+        const imageFile = await dataUrlToFile(inputImage);
+        const maskFile = await dataUrlToFile(inputMask);
+        const payload = {
+          model: request.model || config.defaultModel,
+          prompt: request.prompt,
+          image: imageFile,
+          n: Number(request.count || 1),
+          size: request.size || 'auto',
+          quality: request.quality || 'auto',
+          output_format: request.format || 'png'
+        };
+        if (maskFile) {
+          payload.mask = maskFile;
+        }
 
-    const payload = {
-      model: req.body.model || config.defaultModel,
-      prompt,
-      image: imageFile,
-      n: Number(req.body.count || 1),
-      size: req.body.size || 'auto',
-      quality: req.body.quality || 'auto',
-      output_format: req.body.format || 'png'
-    };
-
-    if (maskFile) {
-      payload.mask = maskFile;
-    }
-
-    const response = await client.images.edit(payload);
-
-    res.json({
-      images: normalizeImageResponse(response),
-      meta: {
-        mode: 'edit',
-        provider: provider.id,
-        model: req.body.model || config.defaultModel,
-        count: Number(req.body.count || 1),
-        size: req.body.size || 'auto',
-        quality: req.body.quality || 'auto',
-        format: req.body.format || 'png',
-        hasMask: Boolean(maskFile)
+        const response = await client.images.edit(payload);
+        return imageResult(response, {
+          mode: 'edit',
+          provider: provider.id,
+          model: request.model || config.defaultModel,
+          count: Number(request.count || 1),
+          size: request.size || 'auto',
+          quality: request.quality || 'auto',
+          format: request.format || 'png',
+          hasMask: Boolean(maskFile)
+        });
+      } catch (error) {
+        logImageError('[image.edit.error]', request, error);
+        throw error;
       }
     });
+    res.status(202).json({ jobId: job.id, status: job.status });
   } catch (error) {
+    logImageError('[image.edit.error]', req.body || {}, error);
     res.status(400).json({ error: error.message || 'Image edit failed' });
   }
 });

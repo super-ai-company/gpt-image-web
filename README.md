@@ -8,6 +8,7 @@
 - 图生图：上传原图，可选遮罩图，按提示词编辑图片。
 - 支持供应商、模型、尺寸、质量、输出格式配置。
 - API Key 保存在服务端 `.env`，前端默认不暴露密钥。
+- 图片生成和编辑使用后台任务轮询，避免长请求触发反向代理超时。
 - 生成结果在浏览器预览并下载。
 
 ## 本地运行
@@ -61,6 +62,8 @@ ACCESS_PASSWORD=your-site-password
 ACCESS_SESSION_DAYS=7
 # HTTPS 反代部署时可设为 true
 ACCESS_COOKIE_SECURE=false
+# 生成结果在服务端内存中的保留分钟数，默认 15
+IMAGE_JOB_RESULT_TTL_MINUTES=15
 ```
 
 配置后，浏览器需要先输入访问口令才能进入页面；图片生成和编辑 API 也会校验登录状态。
@@ -103,5 +106,6 @@ docker compose down
 ## 注意
 
 - 图片接口会按供应商账户规则计费。
+- 后台任务保存在当前服务进程内；服务重启后，未完成任务和未领取结果会丢失。
 - 图生图支持 JPEG、PNG、WEBP，单文件最大 10MB。
 - 兼容接口通常需要 `baseURL` 带 `/v1`。

@@ -36,6 +36,22 @@ function getProgressLabel(value, mode) {
   return '准备请求';
 }
 
+function wait(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+async function readApiResponse(response) {
+  const body = await response.text();
+  try {
+    return body ? JSON.parse(body) : {};
+  } catch {
+    if (response.status === 524) {
+      throw new Error('服务器响应超时（HTTP 524），请稍后重试');
+    }
+    throw new Error(`服务器返回了非 JSON 响应（HTTP ${response.status || '未知'}）`);
+  }
+}
+
 function App() {
   const [auth, setAuth] = useState({ checked: false, authRequired: false, authenticated: false });
   const [loginPassword, setLoginPassword] = useState('');
@@ -147,6 +163,26 @@ function App() {
     setAuth((current) => ({ ...current, authenticated: !current.authRequired }));
   }
 
+  async function waitForImageJob(jobId) {
+    while (true) {
+      await wait(2000);
+      const response = await fetch(`/api/images/jobs/${encodeURIComponent(jobId)}`);
+      const data = await readApiResponse(response);
+      if (response.status === 401) {
+        setAuth((current) => ({ ...current, authenticated: false }));
+      }
+      if (!response.ok) {
+        throw new Error(data.error || `任务查询失败（HTTP ${response.status}）`);
+      }
+      if (data.status === 'completed') {
+        return data.result;
+      }
+      if (data.status === 'failed') {
+        throw new Error(data.error || '图片处理失败');
+      }
+    }
+  }
+
   async function submit() {
     if (!canSubmit) return;
     setStatus('loading');
@@ -192,15 +228,19 @@ function App() {
         });
       }
 
-      const data = await response.json();
+      const data = await readApiResponse(response);
       if (response.status === 401) {
         setAuth((current) => ({ ...current, authenticated: false }));
       }
       if (!response.ok) {
         throw new Error(data.error || '请求失败');
       }
+      if (!data.jobId) {
+        throw new Error('服务器未返回任务编号');
+      }
+      const jobResult = await waitForImageJob(data.jobId);
       setProgress({ value: 100, label: getProgressLabel(100, mode) });
-      setResult(data);
+      setResult(jobResult);
       setStatus('success');
     } catch (requestError) {
       setError(requestError.message || '请求失败');
