@@ -1,0 +1,9 @@
+services:
+  gpt-image-web:
+    container_name: gpt-image-web
+    restart: unless-stopped
+    ports: !override
+      - "${HOST_PORT:-15230}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
